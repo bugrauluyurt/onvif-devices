@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Auto-detect network interface from default route
+DETECTED_IF=$(ip route show default 2>/dev/null | awk '/^default/ {print $5; exit}')
+
 # Default values
-PARENT_IF="eth0"
+PARENT_IF="${DETECTED_IF:-eth0}"  # Use detected interface or fallback to eth0
 MAC_PREFIX="8C:1F:64:A2"
 CAM_COUNT=2
 WRITE_TO_FILE=false
+QUICK_SCAN=true  # Quick scan is now the default
 
 # Colors for output
 RED='\033[0;31m'
@@ -22,14 +26,16 @@ Usage: $0 [OPTIONS]
 Generate network configuration for ONVIF devices
 
 OPTIONS:
-    -i INTERFACE    Parent network interface (default: eth0)
+    -i INTERFACE    Parent network interface (default: auto-detected or eth0)
     -m MAC_PREFIX   MAC address prefix (default: 8C:1F:64:A2)
     -c COUNT        Number of cameras (default: 2)
     -w              Write configuration to .env file
+    -f              Full network scan (default is quick targeted scan)
     -h              Show this help message
 
 EXAMPLES:
-    $0                          # Use defaults, display suggestions
+    $0                          # Auto-detect interface, quick scan, display suggestions
+    $0 -f                       # Full network scan (slower but more thorough)
     $0 -i wlan0 -c 3           # Use WiFi interface, 3 cameras
     $0 -w                      # Write to .env file automatically
     $0 -m 02:42:AC:11 -w       # Custom MAC prefix and write to file
@@ -41,12 +47,13 @@ EOF
 }
 
 # Parse command line arguments
-while getopts "i:m:c:wh" opt; do
+while getopts "i:m:c:wfh" opt; do
     case $opt in
         i) PARENT_IF="$OPTARG" ;;
         m) MAC_PREFIX="$OPTARG" ;;
         c) CAM_COUNT="$OPTARG" ;;
         w) WRITE_TO_FILE=true ;;
+        f) QUICK_SCAN=false ;;  # Full scan mode
         h) show_help; exit 0 ;;
         *) echo "Invalid option. Use -h for help."; exit 1 ;;
     esac
@@ -103,7 +110,11 @@ if [ -z "$GATEWAY" ]; then
 fi
 
 echo -e "${GREEN}Network Details:${NC}"
-echo "  Interface: $PARENT_IF"
+if [ -n "$DETECTED_IF" ] && [ "$PARENT_IF" = "$DETECTED_IF" ]; then
+    echo "  Interface: $PARENT_IF (auto-detected)"
+else
+    echo "  Interface: $PARENT_IF"
+fi
 echo "  Host IP: $HOST_IP"
 echo "  Subnet: $SUBNET"
 echo "  Gateway: $GATEWAY"
@@ -113,17 +124,57 @@ echo
 echo -e "${YELLOW}Scanning network for used IP addresses...${NC}"
 SCAN_NETWORK=$(echo "$SUBNET" | cut -d'/' -f1 | sed 's/\.0$//')
 
+# Determine scan ranges based on requirements
+# We need IPs in ranges: 240-250 for shim, 200-230 for cameras
+if [ "$QUICK_SCAN" = true ]; then
+    # Default: quick targeted scan
+    SCAN_RANGES="200-230 240-250"
+else
+    echo -e "${BLUE}Using full network scan (this may take longer)${NC}"
+    SCAN_RANGES="1-254"
+fi
+
 # Perform ARP scan
 if [ "$EUID" -eq 0 ]; then
-    USED_IPS=$(arp-scan -l --interface="$PARENT_IF" 2>/dev/null | grep -E "^[0-9]+\." | awk '{print $1}' | sort -V)
+    if [ "$QUICK_SCAN" = true ]; then
+        # Targeted scan with timeout for faster results
+        USED_IPS=""
+        for range in $SCAN_RANGES; do
+            START=$(echo $range | cut -d'-' -f1)
+            END=$(echo $range | cut -d'-' -f2)
+            # Use arp-scan with specific IP range and short timeout
+            RANGE_IPS=$(arp-scan --interface="$PARENT_IF" -t 100 "$i1.$i2.$i3.$START-$i1.$i2.$i3.$END" 2>/dev/null | grep -E "^[0-9]+\." | awk '{print $1}')
+            if [ -n "$RANGE_IPS" ]; then
+                USED_IPS="$USED_IPS$RANGE_IPS"$'\n'
+            fi
+        done
+        USED_IPS=$(echo "$USED_IPS" | grep -v '^$' | sort -V | uniq)
+    else
+        # Full network scan with timeout
+        USED_IPS=$(arp-scan --interface="$PARENT_IF" -t 500 -l 2>/dev/null | grep -E "^[0-9]+\." | awk '{print $1}' | sort -V)
+    fi
 else
     echo -e "${YELLOW}Note: Running without sudo, using basic ping scan (less reliable)${NC}"
     USED_IPS=""
-    for i in {1..254}; do
-        if ping -c 1 -W 1 "$i1.$i2.$i3.$i" >/dev/null 2>&1; then
-            USED_IPS="$USED_IPS$i1.$i2.$i3.$i"$'\n'
-        fi
-    done
+    if [ "$QUICK_SCAN" = true ]; then
+        # Quick scan - only check needed ranges
+        for range in $SCAN_RANGES; do
+            START=$(echo $range | cut -d'-' -f1)
+            END=$(echo $range | cut -d'-' -f2)
+            for i in $(seq $START $END); do
+                if ping -c 1 -W 1 "$i1.$i2.$i3.$i" >/dev/null 2>&1; then
+                    USED_IPS="$USED_IPS$i1.$i2.$i3.$i"$'\n'
+                fi
+            done
+        done
+    else
+        # Full scan
+        for i in {1..254}; do
+            if ping -c 1 -W 1 "$i1.$i2.$i3.$i" >/dev/null 2>&1; then
+                USED_IPS="$USED_IPS$i1.$i2.$i3.$i"$'\n'
+            fi
+        done
+    fi
     USED_IPS=$(echo "$USED_IPS" | grep -v '^$' | sort -V)
 fi
 
