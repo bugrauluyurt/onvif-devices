@@ -141,7 +141,7 @@ sudo ./scripts/generate-config.sh
 ### 2. Start Services
 
 ```bash
-docker compose -f docker-compose.macvlan.yml --env-file .env up -d
+docker compose -f docker-compose.macvlan.yml --env-file .env up
 ```
 
 ### 3. Verify Deployment
@@ -225,6 +225,48 @@ onvif-devices/
    - Host needs macvlan shim interface (created by scripts/macvlan-setup.sh)
    - Verify HOST_SHIM_IP is accessible: `ping 10.0.0.250`
 
+### Docker Issues
+
+1. **Network pool overlap error** (`Pool overlaps with other one on this address space`):
+   - **Cause**: Existing macvlan network from previous Docker Compose runs using the same subnet
+   - **Solution**: Remove the conflicting network before starting:
+   ```bash
+   # Check existing networks
+   docker network ls
+
+   # Remove conflicting macvlan network (replace with actual network name)
+   docker network rm eth0_cam_net
+
+   # Clean up macvlan interface and restart
+   ./scripts/macvlan-cleanup.sh
+   ./scripts/macvlan-setup.sh
+   docker compose -f docker-compose.macvlan.yml up
+   ```
+
+2. **Container name conflicts** (`container name is already in use`):
+   - **Cause**: Leftover containers from previous runs using the same names
+   - **Solution**: Remove existing containers:
+   ```bash
+   # Stop and remove all containers
+   docker compose -f docker-compose.macvlan.yml down
+
+   # Or force remove specific containers
+   docker rm -f mediamtx onvif-cam1 onvif-cam2
+
+   # Then start fresh
+   docker compose -f docker-compose.macvlan.yml up
+   ```
+
+3. **Clean deployment procedure** (recommended when encountering Docker conflicts):
+   ```bash
+   # Complete cleanup and fresh start
+   docker compose -f docker-compose.macvlan.yml down
+   docker system prune -f
+   ./scripts/macvlan-cleanup.sh
+   ./scripts/macvlan-setup.sh
+   docker compose -f docker-compose.macvlan.yml up
+   ```
+
 ### Service Issues
 
 1. **ONVIF server not responding**:
@@ -262,7 +304,7 @@ ping 10.0.0.250  # MediaMTX host
 
 # Stop and restart services
 docker compose -f docker-compose.macvlan.yml down
-docker compose -f docker-compose.macvlan.yml up -d
+docker compose -f docker-compose.macvlan.yml up
 ```
 
 ## Stopping Services

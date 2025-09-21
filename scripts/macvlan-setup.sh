@@ -1,6 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
-[ -f ../.env ] && source ../.env
+
+# Detect script directory and project root
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+ENV_FILE="$PROJECT_ROOT/.env"
+
+# Source .env file and validate required variables
+if [ -f "$ENV_FILE" ]; then
+  source "$ENV_FILE"
+else
+  echo "Error: .env file not found at $ENV_FILE. Run scripts/generate-config.sh first." >&2
+  exit 1
+fi
+
+# Validate that required variables are set
+if [ -z "${HOST_SHIM_IP:-}" ]; then
+  echo "Error: HOST_SHIM_IP is not set in .env file. Run scripts/generate-config.sh to regenerate." >&2
+  exit 1
+fi
 
 # fallback autodetect if not set
 if [ -z "${PARENT_IF:-}" ]; then
