@@ -310,7 +310,11 @@ docker compose -f docker-compose.macvlan.yml up
 ## Stopping Services
 
 ```bash
+# Stop and remove containers
 docker compose -f docker-compose.macvlan.yml down
+
+# Clean up macvlan network interface (important step)
+./scripts/macvlan-cleanup.sh
 ```
 
-This will stop and remove all containers while preserving the macvlan network interface.
+**Important**: Always run `macvlan-cleanup.sh` after stopping services to properly clean up the macvlan network interface. This prevents network conflicts when restarting services later and ensures a clean network state.
