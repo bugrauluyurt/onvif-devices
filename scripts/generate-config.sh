@@ -277,6 +277,10 @@ fi
 # Write to file or ask user
 if [ "$WRITE_TO_FILE" = true ]; then
     echo "$CONFIG" > "$PROJECT_ROOT/.env"
+    # Fix ownership if running as root
+    if [ "$EUID" -eq 0 ] && [ -n "$SUDO_USER" ]; then
+        chown "$SUDO_USER:$SUDO_USER" "$PROJECT_ROOT/.env"
+    fi
     echo -e "${GREEN}Configuration written to .env file${NC}"
 else
     echo -e "${BLUE}Save this configuration to .env file? (y/N):${NC} "
@@ -287,6 +291,10 @@ else
             cp "$PROJECT_ROOT/.env" "$PROJECT_ROOT/.env.backup"
         fi
         echo "$CONFIG" > "$PROJECT_ROOT/.env"
+        # Fix ownership if running as root
+        if [ "$EUID" -eq 0 ] && [ -n "$SUDO_USER" ]; then
+            chown "$SUDO_USER:$SUDO_USER" "$PROJECT_ROOT/.env"
+        fi
         echo -e "${GREEN}Configuration saved to .env file${NC}"
     else
         echo -e "${BLUE}Configuration not saved. Copy the above to .env manually.${NC}"
