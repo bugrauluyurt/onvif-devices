@@ -1,0 +1,245 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Default values
+PARENT_IF="eth0"
+MAC_PREFIX="8C:1F:64:A2"
+CAM_COUNT=2
+WRITE_TO_FILE=false
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Help function
+show_help() {
+    cat << EOF
+Usage: $0 [OPTIONS]
+
+Generate network configuration for ONVIF devices
+
+OPTIONS:
+    -i INTERFACE    Parent network interface (default: eth0)
+    -m MAC_PREFIX   MAC address prefix (default: 8C:1F:64:A2)
+    -c COUNT        Number of cameras (default: 2)
+    -w              Write configuration to .env file
+    -h              Show this help message
+
+EXAMPLES:
+    $0                          # Use defaults, display suggestions
+    $0 -i wlan0 -c 3           # Use WiFi interface, 3 cameras
+    $0 -w                      # Write to .env file automatically
+    $0 -m 02:42:AC:11 -w       # Custom MAC prefix and write to file
+
+PREREQUISITES:
+    - arp-scan must be installed
+    - Run with sudo for network scanning capabilities
+EOF
+}
+
+# Parse command line arguments
+while getopts "i:m:c:wh" opt; do
+    case $opt in
+        i) PARENT_IF="$OPTARG" ;;
+        m) MAC_PREFIX="$OPTARG" ;;
+        c) CAM_COUNT="$OPTARG" ;;
+        w) WRITE_TO_FILE=true ;;
+        h) show_help; exit 0 ;;
+        *) echo "Invalid option. Use -h for help."; exit 1 ;;
+    esac
+done
+
+echo -e "${BLUE}=== Network Configuration Generator ===${NC}"
+echo
+
+# Check if arp-scan is installed
+if ! command -v arp-scan >/dev/null 2>&1; then
+    echo -e "${RED}Error: arp-scan is not installed${NC}"
+    echo "Please install it first:"
+    echo "  Ubuntu/Debian: sudo apt-get install arp-scan"
+    echo "  macOS: brew install arp-scan"
+    echo "  RHEL/CentOS: sudo yum install arp-scan"
+    exit 1
+fi
+
+# Check if interface exists
+if ! ip link show "$PARENT_IF" >/dev/null 2>&1; then
+    echo -e "${RED}Error: Interface '$PARENT_IF' not found${NC}"
+    echo "Available interfaces:"
+    ip link show | grep -E "^[0-9]+:" | awk '{print "  " $2}' | sed 's/:$//'
+    exit 1
+fi
+
+# Get network information
+echo -e "${YELLOW}Detecting network configuration...${NC}"
+
+# Get IP and subnet from interface
+IP_INFO=$(ip addr show "$PARENT_IF" | grep "inet " | head -1 | awk '{print $2}')
+if [ -z "$IP_INFO" ]; then
+    echo -e "${RED}Error: No IP address found on interface '$PARENT_IF'${NC}"
+    exit 1
+fi
+
+HOST_IP=$(echo "$IP_INFO" | cut -d'/' -f1)
+CIDR=$(echo "$IP_INFO" | cut -d'/' -f2)
+
+# Calculate subnet
+IFS='.' read -r i1 i2 i3 i4 <<< "$HOST_IP"
+case $CIDR in
+    24) SUBNET="$i1.$i2.$i3.0/24" ;;
+    16) SUBNET="$i1.$i2.0.0/16" ;;
+    8)  SUBNET="$i1.0.0.0/8" ;;
+    *)  echo -e "${RED}Warning: Unusual CIDR /$CIDR, assuming /24${NC}"; SUBNET="$i1.$i2.$i3.0/24" ;;
+esac
+
+# Get default gateway
+GATEWAY=$(ip route show default dev "$PARENT_IF" | awk '{print $3}' | head -1)
+if [ -z "$GATEWAY" ]; then
+    GATEWAY="$i1.$i2.$i3.1"
+    echo -e "${YELLOW}Warning: Could not detect gateway, assuming $GATEWAY${NC}"
+fi
+
+echo -e "${GREEN}Network Details:${NC}"
+echo "  Interface: $PARENT_IF"
+echo "  Host IP: $HOST_IP"
+echo "  Subnet: $SUBNET"
+echo "  Gateway: $GATEWAY"
+echo
+
+# Scan for used IPs
+echo -e "${YELLOW}Scanning network for used IP addresses...${NC}"
+SCAN_NETWORK=$(echo "$SUBNET" | cut -d'/' -f1 | sed 's/\.0$//')
+
+# Perform ARP scan
+if [ "$EUID" -eq 0 ]; then
+    USED_IPS=$(arp-scan -l --interface="$PARENT_IF" 2>/dev/null | grep -E "^[0-9]+\." | awk '{print $1}' | sort -V)
+else
+    echo -e "${YELLOW}Note: Running without sudo, using basic ping scan (less reliable)${NC}"
+    USED_IPS=""
+    for i in {1..254}; do
+        if ping -c 1 -W 1 "$i1.$i2.$i3.$i" >/dev/null 2>&1; then
+            USED_IPS="$USED_IPS$i1.$i2.$i3.$i"$'\n'
+        fi
+    done
+    USED_IPS=$(echo "$USED_IPS" | grep -v '^$' | sort -V)
+fi
+
+echo -e "${GREEN}Used IP addresses:${NC}"
+if [ -n "$USED_IPS" ]; then
+    echo "$USED_IPS" | while read -r ip; do
+        echo "  $ip"
+    done
+else
+    echo "  No active devices found"
+fi
+echo
+
+# Find available IPs
+echo -e "${YELLOW}Finding available IP addresses...${NC}"
+
+# Function to check if IP is used
+is_ip_used() {
+    echo "$USED_IPS" | grep -q "^$1$"
+}
+
+# Suggest HOST_SHIM_IP (try high range first)
+HOST_SHIM_IP=""
+for i in {250..240}; do
+    CANDIDATE="$i1.$i2.$i3.$i"
+    if ! is_ip_used "$CANDIDATE"; then
+        HOST_SHIM_IP="$CANDIDATE/24"
+        break
+    fi
+done
+
+if [ -z "$HOST_SHIM_IP" ]; then
+    echo -e "${RED}Error: Could not find available IP for HOST_SHIM_IP${NC}"
+    exit 1
+fi
+
+# Find consecutive IPs for cameras
+CAM_IPS=()
+BASE_IP=230
+
+while [ ${#CAM_IPS[@]} -lt "$CAM_COUNT" ] && [ $BASE_IP -gt 200 ]; do
+    CANDIDATE="$i1.$i2.$i3.$BASE_IP"
+    if ! is_ip_used "$CANDIDATE"; then
+        CAM_IPS+=("$CANDIDATE")
+    fi
+    ((BASE_IP--))
+done
+
+if [ ${#CAM_IPS[@]} -lt "$CAM_COUNT" ]; then
+    echo -e "${RED}Error: Could not find $CAM_COUNT available consecutive IPs${NC}"
+    exit 1
+fi
+
+# Generate MAC addresses
+generate_mac() {
+    local index=$1
+    printf "%s:%02X:%02X" "$MAC_PREFIX" "$((index))" "$((index))"
+}
+
+echo -e "${GREEN}=== Suggested Configuration ===${NC}"
+echo
+
+# Generate configuration
+CONFIG="# Ethernet NIC for macvlan
+PARENT_IF=$PARENT_IF
+
+# Your LAN
+LAN_SUBNET=$SUBNET
+LAN_GATEWAY=$GATEWAY
+
+# Host-side macvlan shim (unused IP you confirmed free)
+HOST_SHIM_IP=$HOST_SHIM_IP
+
+# Virtual ONVIF devices (unique IPs + MACs)"
+
+for i in $(seq 1 "$CAM_COUNT"); do
+    CAM_IP=${CAM_IPS[$((i-1))]}
+    CAM_MAC=$(generate_mac "$i")
+    CONFIG="$CONFIG
+CAM${i}_IP=$CAM_IP
+CAM${i}_MAC=$CAM_MAC"
+done
+
+echo "$CONFIG"
+echo
+
+# Check if .env already exists
+if [ -f "../.env" ]; then
+    echo -e "${YELLOW}Warning: .env file already exists${NC}"
+    if [ "$WRITE_TO_FILE" = true ]; then
+        echo -e "${YELLOW}Backing up existing .env to .env.backup${NC}"
+        cp "../.env" "../.env.backup"
+    fi
+fi
+
+# Write to file or ask user
+if [ "$WRITE_TO_FILE" = true ]; then
+    echo "$CONFIG" > "../.env"
+    echo -e "${GREEN}Configuration written to .env file${NC}"
+else
+    echo -e "${BLUE}Save this configuration to .env file? (y/N):${NC} "
+    read -r response
+    if [[ "$response" =~ ^[Yy]$ ]]; then
+        if [ -f "../.env" ]; then
+            echo -e "${YELLOW}Backing up existing .env to .env.backup${NC}"
+            cp "../.env" "../.env.backup"
+        fi
+        echo "$CONFIG" > "../.env"
+        echo -e "${GREEN}Configuration saved to .env file${NC}"
+    else
+        echo -e "${BLUE}Configuration not saved. Copy the above to .env manually.${NC}"
+    fi
+fi
+
+echo
+echo -e "${GREEN}Next steps:${NC}"
+echo "1. Review the .env file and adjust if needed"
+echo "2. Run: ./scripts/macvlan-setup.sh"
+echo "3. Run: docker compose -f docker-compose.macvlan.yml up -d"

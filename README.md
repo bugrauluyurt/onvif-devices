@@ -16,6 +16,10 @@ A Docker-based setup for creating virtual ONVIF cameras that can be discovered a
 - Linux host with network interface access
 - For ARM devices (Raspberry Pi): ARM64-compatible Docker image
 - Video files for streaming (MP4 format recommended)
+- arp-scan for network discovery:
+  - Ubuntu/Debian: `sudo apt-get install arp-scan`
+  - macOS: `brew install arp-scan`
+  - RHEL/CentOS: `sudo yum install arp-scan`
 
 ## Installation
 
@@ -36,11 +40,33 @@ git clone <this-repository>
 cd onvif-devices
 ```
 
+### 3. Generate Network Configuration
+
+Use the configuration generator to automatically detect your network and suggest settings:
+
+```bash
+# Run with sudo for best network scanning
+sudo ./scripts/generate-config.sh
+
+# Or specify options
+sudo ./scripts/generate-config.sh -i wlan0 -c 3 -w
+
+# See all options
+./scripts/generate-config.sh -h
+```
+
+This script will:
+- Automatically detect your network subnet and gateway
+- Scan for used IP addresses using arp-scan
+- Suggest available IPs for cameras and host interface
+- Generate MAC addresses with the 8C:1F:64:A2 prefix
+- Optionally write the configuration to `.env` file
+
 ## Configuration
 
 ### Network Configuration
 
-Edit `.env` to configure your network settings:
+The configuration generator creates a `.env` file, but you can also edit it manually:
 
 ```bash
 # Ethernet NIC for macvlan
@@ -91,6 +117,11 @@ Place your converted video files in `/home/pi/Videos/` (or update the volume mou
 
 This script creates the macvlan interface needed for containers to have unique IP addresses.
 
+**Note**: If you haven't generated the `.env` file yet, run the configuration generator first:
+```bash
+sudo ./scripts/generate-config.sh
+```
+
 ### 2. Start Services
 
 ```bash
@@ -140,6 +171,7 @@ Use ONVIF-compatible software to discover devices:
 ```
 onvif-devices/
 ├── scripts/
+│   ├── generate-config.sh            # Network configuration generator
 │   ├── macvlan-setup.sh              # Network setup script
 │   └── macvlan-cleanup.sh            # Network cleanup script
 ├── .env                              # Network configuration
@@ -157,6 +189,7 @@ onvif-devices/
 - **`docker-compose.macvlan.yml`**: Defines services and macvlan network configuration
 - **`mediamtx.yml`**: MediaMTX server settings for RTSP streaming
 - **`onvif-cam*-macvlan.yaml`**: Individual camera configurations with ONVIF parameters
+- **`scripts/generate-config.sh`**: Script to automatically generate network configuration
 - **`scripts/macvlan-setup.sh`**: Script to create macvlan network interface
 - **`scripts/macvlan-cleanup.sh`**: Script to remove macvlan network interface
 
