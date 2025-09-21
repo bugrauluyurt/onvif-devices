@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Detect script directory and project root
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
 # Auto-detect network interface from default route
 DETECTED_IF=$(ip route show default 2>/dev/null | awk '/^default/ {print $5; exit}')
 
@@ -262,27 +266,27 @@ echo "$CONFIG"
 echo
 
 # Check if .env already exists
-if [ -f "../.env" ]; then
+if [ -f "$PROJECT_ROOT/.env" ]; then
     echo -e "${YELLOW}Warning: .env file already exists${NC}"
     if [ "$WRITE_TO_FILE" = true ]; then
         echo -e "${YELLOW}Backing up existing .env to .env.backup${NC}"
-        cp "../.env" "../.env.backup"
+        cp "$PROJECT_ROOT/.env" "$PROJECT_ROOT/.env.backup"
     fi
 fi
 
 # Write to file or ask user
 if [ "$WRITE_TO_FILE" = true ]; then
-    echo "$CONFIG" > "../.env"
+    echo "$CONFIG" > "$PROJECT_ROOT/.env"
     echo -e "${GREEN}Configuration written to .env file${NC}"
 else
     echo -e "${BLUE}Save this configuration to .env file? (y/N):${NC} "
     read -r response
     if [[ "$response" =~ ^[Yy]$ ]]; then
-        if [ -f "../.env" ]; then
+        if [ -f "$PROJECT_ROOT/.env" ]; then
             echo -e "${YELLOW}Backing up existing .env to .env.backup${NC}"
-            cp "../.env" "../.env.backup"
+            cp "$PROJECT_ROOT/.env" "$PROJECT_ROOT/.env.backup"
         fi
-        echo "$CONFIG" > "../.env"
+        echo "$CONFIG" > "$PROJECT_ROOT/.env"
         echo -e "${GREEN}Configuration saved to .env file${NC}"
     else
         echo -e "${BLUE}Configuration not saved. Copy the above to .env manually.${NC}"
@@ -290,7 +294,16 @@ else
 fi
 
 echo
+echo -e "${RED}⚠️  IMPORTANT: Update ONVIF Camera Configuration Files${NC}"
+echo -e "${YELLOW}Before starting the containers, you MUST update the MAC addresses in:${NC}"
+for i in $(seq 1 "$CAM_COUNT"); do
+    CAM_MAC=$(generate_mac "$i")
+    echo -e "  ${BLUE}onvif-cam${i}-macvlan.yaml${NC} → Update 'mac:' field to: ${GREEN}${CAM_MAC}${NC}"
+done
+echo -e "${YELLOW}Failure to update these will cause network conflicts!${NC}"
+echo
 echo -e "${GREEN}Next steps:${NC}"
 echo "1. Review the .env file and adjust if needed"
-echo "2. Run: ./scripts/macvlan-setup.sh"
-echo "3. Run: docker compose -f docker-compose.macvlan.yml up -d"
+echo "2. Update MAC addresses in onvif-cam*-macvlan.yaml files (see warning above)"
+echo "3. Run: ./scripts/macvlan-setup.sh"
+echo "4. Run: docker compose -f docker-compose.macvlan.yml up -d"

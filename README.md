@@ -89,6 +89,20 @@ CAM2_MAC=8C:1F:64:A2:00:02
 
 **Important**: Make sure the camera IPs are static or adjust your DHCP pool from your router to prevent IP conflicts.
 
+⚠️ **Critical**: After generating or updating your `.env` file, you **MUST** update the MAC addresses in the ONVIF camera configuration files to match the generated values:
+
+- Update `mac:` field in `onvif-cam1-macvlan.yaml` with the `CAM1_MAC` value from `.env`
+- Update `mac:` field in `onvif-cam2-macvlan.yaml` with the `CAM2_MAC` value from `.env`
+- For additional cameras, update `onvif-cam{N}-macvlan.yaml` with corresponding `CAM{N}_MAC` values
+
+**Example**: If your `.env` contains `CAM1_MAC=8C:1F:64:A2:01:01`, then `onvif-cam1-macvlan.yaml` should have:
+```yaml
+onvif:
+  - mac: 8C:1F:64:A2:01:01
+```
+
+Failure to update these MAC addresses will cause network conflicts and prevent the cameras from working properly.
+
 ### Video Preparation
 
 Convert your video files to ONVIF-compatible format using FFmpeg:
@@ -121,6 +135,8 @@ This script creates the macvlan interface needed for containers to have unique I
 ```bash
 sudo ./scripts/generate-config.sh
 ```
+
+⚠️ **Important**: Before starting services, ensure you have updated the MAC addresses in the ONVIF camera configuration files (`onvif-cam1-macvlan.yaml`, `onvif-cam2-macvlan.yaml`) to match the `CAM1_MAC`, `CAM2_MAC` values from your `.env` file.
 
 ### 2. Start Services
 
