@@ -6,5 +6,5 @@ onvif:
     target:
       hostname: 10.0.0.250
       ports: { rtsp: 8554 }
-    highQuality: { rtsp: rtsp://10.0.0.250:8554/cam1, width: 1920, height: 1080, framerate: 25, bitrate: 4096 }
-    lowQuality:  { rtsp: rtsp://10.0.0.250:8554/cam1, width: 640,  height: 360,  framerate: 10, bitrate: 512 }
+    highQuality: { rtsp: /cam1, width: 1920, height: 1080, framerate: 25, bitrate: 4096 }
+    lowQuality:  { rtsp: /cam1, width: 640,  height: 360,  framerate: 10, bitrate: 512 }
