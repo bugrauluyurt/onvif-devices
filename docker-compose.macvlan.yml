@@ -6,7 +6,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
-      - /home/pi/Videos:/media:ro
+      - ${VIDEO_DIR:-/home/pi/Videos}:/media:ro
 
   onvif-cam1:
     image: onvif-server:arm64-local

@@ -81,10 +81,10 @@ HOST_SHIM_IP=10.0.0.250/24
 
 # Virtual ONVIF devices (unique IPs + MACs)
 CAM1_IP=10.0.0.231
-CAM1_MAC=8C:1F:64:A2:00:01
+CAM1_MAC=02:11:22:A2:01:01
 
 CAM2_IP=10.0.0.232
-CAM2_MAC=8C:1F:64:A2:00:02
+CAM2_MAC=02:11:22:A2:02:02
 ```
 
 **Important**: Make sure the camera IPs are static or adjust your DHCP pool from your router to prevent IP conflicts.
@@ -119,7 +119,14 @@ This command:
 - Uses H.264 video codec with AAC audio
 - Optimizes for streaming compatibility
 
-Place your converted video files in `/home/pi/Videos/` (or update the volume mount in docker-compose.yml).
+Place your converted video files in the directory specified by `VIDEO_DIR` in your `.env` file (defaults to `/home/pi/Videos`).
+
+**Note**: The `VIDEO_DIR` host directory is mounted to `/media` inside the MediaMTX container. The video path in `mediamtx.yml` uses `/media/video.mp4` (the container path), not the host path. To use a different video directory:
+
+```bash
+# In .env file
+VIDEO_DIR=/path/to/your/videos
+```
 
 ## Setup and Deployment
 
@@ -141,7 +148,7 @@ sudo ./scripts/generate-config.sh
 ### 2. Start Services
 
 ```bash
-docker compose -f docker-compose.macvlan.yml --env-file .env up
+docker compose -f docker-compose.macvlan.yml --env-file .env up -d
 ```
 
 ### 3. Verify Deployment

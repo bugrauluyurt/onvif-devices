@@ -1,5 +1,5 @@
 onvif:
-  - mac: 8C:1F:64:A2:01:01
+  - mac: 02:11:22:A2:01:01
     name: Cam1
     uuid: 9f3d2c1e-bbcd-4f6a-9f0b-2e5a7a4e9c61
     ports: { server: 80, rtsp: 8554, snapshot: 8080 }
