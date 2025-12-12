@@ -6,5 +6,5 @@ onvif:
     target:
       hostname: 10.0.0.230
       ports: { snapshot: 8080 }
-    highQuality: { rtsp: /cam1, width: 1920, height: 1080, framerate: 25, bitrate: 4096 }
-    lowQuality:  { rtsp: /cam1, width: 640,  height: 360,  framerate: 10, bitrate: 512 }
+    highQuality: { rtsp: "/cam/realmonitor?channel=1&subtype=0&unicast=true&proto=Onvif", width: 1920, height: 1080, framerate: 25, bitrate: 4096 }
+    lowQuality:  { rtsp: "/cam/realmonitor?channel=1&subtype=1&unicast=true&proto=Onvif", width: 640,  height: 360,  framerate: 10, bitrate: 512 }

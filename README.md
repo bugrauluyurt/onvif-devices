@@ -134,8 +134,8 @@ onvif:
     target:
       hostname: 10.0.0.230          # Must match CAM1_IP in .env
       ports: { snapshot: 8080 }
-    highQuality: { rtsp: /cam1, width: 1920, height: 1080, framerate: 25, bitrate: 4096 }
-    lowQuality:  { rtsp: /cam1, width: 640,  height: 360,  framerate: 10, bitrate: 512 }
+    highQuality: { rtsp: "/cam/realmonitor?channel=1&subtype=0&unicast=true&proto=Onvif", width: 1920, height: 1080, framerate: 25, bitrate: 4096 }
+    lowQuality:  { rtsp: "/cam/realmonitor?channel=1&subtype=1&unicast=true&proto=Onvif", width: 640,  height: 360,  framerate: 10, bitrate: 512 }
 ```
 
 **Key configuration points:**
@@ -156,9 +156,9 @@ hls: yes
 webrtc: yes
 
 paths:
-  cam1:
+  "cam/realmonitor":
     source: publisher
-    runOnInit: ffmpeg -stream_loop -1 -re -i /media/video.mp4 -c:v copy -c:a copy -f rtsp rtsp://127.0.0.1:8554/cam1
+    runOnInit: ffmpeg -stream_loop -1 -re -i /media/video.mp4 -c:v copy -c:a copy -f rtsp "rtsp://127.0.0.1:8554/cam/realmonitor"
     runOnInitRestart: yes
 ```
 
@@ -216,8 +216,8 @@ Once deployed, your virtual cameras will be accessible at:
 
 | Camera | ONVIF Discovery | RTSP Stream |
 |--------|-----------------|-------------|
-| Cam1 | `http://10.0.0.230` | `rtsp://10.0.0.230:8554/cam1` |
-| Cam2 | `http://10.0.0.229` | `rtsp://10.0.0.229:8554/cam1` |
+| Cam1 | `http://10.0.0.230` | `rtsp://10.0.0.230:8554/cam/realmonitor?channel=1&subtype=0&unicast=true&proto=Onvif` |
+| Cam2 | `http://10.0.0.229` | `rtsp://10.0.0.229:8554/cam/realmonitor?channel=1&subtype=0&unicast=true&proto=Onvif` |
 
 ### Testing RTSP Streams
 
@@ -225,13 +225,13 @@ From any machine on your network:
 
 ```bash
 # Test with ffprobe
-ffprobe rtsp://10.0.0.230:8554/cam1
+ffprobe "rtsp://10.0.0.230:8554/cam/realmonitor?channel=1&subtype=0&unicast=true&proto=Onvif"
 
 # Play with ffplay
-ffplay rtsp://10.0.0.230:8554/cam1
+ffplay "rtsp://10.0.0.230:8554/cam/realmonitor?channel=1&subtype=0&unicast=true&proto=Onvif"
 
 # Play with VLC
-vlc rtsp://10.0.0.230:8554/cam1
+vlc "rtsp://10.0.0.230:8554/cam/realmonitor?channel=1&subtype=0&unicast=true&proto=Onvif"
 ```
 
 ### ONVIF Discovery
@@ -244,7 +244,7 @@ Use ONVIF-compatible software to discover devices:
 
 When you query the stream URI via ONVIF, you'll receive:
 ```
-rtsp://10.0.0.230:8554/cam1
+rtsp://10.0.0.230:8554/cam/realmonitor?channel=1&subtype=0&unicast=true&proto=Onvif
 ```
 
 ## Project Structure
@@ -346,7 +346,7 @@ docker logs onvif-cam1
 docker exec onvif-cam1 ip addr show eth0
 
 # Test RTSP from another machine
-ffprobe rtsp://10.0.0.230:8554/cam1
+ffprobe "rtsp://10.0.0.230:8554/cam/realmonitor?channel=1&subtype=0&unicast=true&proto=Onvif"
 
 # Restart services
 docker compose restart
