@@ -16,7 +16,9 @@ The setup consists of:
 ## Key Configuration Files
 
 - `.env`: Network configuration (LAN subnet, gateway, device IPs and MACs)
-- `docker-compose.macvlan.yml`: Main Docker Compose configuration
+- `docker-compose.yml`: Main Docker Compose configuration
+- `Dockerfile`: Combined image build (ONVIF + MediaMTX)
+- `entrypoint.sh`: Container entrypoint script
 - `mediamtx.yml`: MediaMTX server configuration for RTSP streams
 - `onvif-cam1-macvlan.yaml` / `onvif-cam2-macvlan.yaml`: Individual ONVIF device configurations
 - `scripts/generate-config.sh`: Script to automatically generate network configuration
@@ -34,16 +36,16 @@ sudo ./scripts/generate-config.sh
 ./scripts/macvlan-setup.sh
 
 # Start all services
-docker-compose -f docker-compose.macvlan.yml up -d
+docker compose up -d
 
 # Stop services
-docker-compose -f docker-compose.macvlan.yml down
+docker compose down
 
 # Clean up macvlan interface
 ./scripts/macvlan-cleanup.sh
 
 # View logs
-docker-compose -f docker-compose.macvlan.yml logs -f
+docker compose logs -f
 ```
 
 ### Network Configuration
@@ -53,7 +55,8 @@ docker-compose -f docker-compose.macvlan.yml logs -f
 
 ## Development Notes
 
-- The project requires the `onvif-server:arm64-local` Docker image to be built separately
+- The ONVIF server is pulled from `ghcr.io/daniela-hase/onvif-server` during build
+- Works on any architecture (ARM64, x86_64, etc.) - Node.js is installed via Alpine packages
 - Use `scripts/generate-config.sh` to automatically detect network settings and generate .env file
 - Video files should be placed in `/home/pi/Videos` directory (mounted as `/media` in containers)
 - ONVIF devices are accessible at their configured IP addresses (CAM1_IP, CAM2_IP from .env)

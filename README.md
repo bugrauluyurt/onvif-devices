@@ -38,7 +38,7 @@ This means:
 
 - Docker and Docker Compose
 - Linux host with network interface access
-- For ARM devices (Raspberry Pi): ARM64-compatible Docker image
+- Works on any architecture (ARM64, x86_64, etc.)
 - Video files for streaming (MP4 format recommended)
 - arp-scan for network discovery:
   - Ubuntu/Debian: `sudo apt-get install arp-scan`
@@ -47,38 +47,27 @@ This means:
 
 ## Installation
 
-### 1. Build ONVIF Server Image (Required for ARM devices)
-
-If you're running on ARM devices like Raspberry Pi, you need to build the ONVIF server image first:
-
-```bash
-git clone https://github.com/daniela-hase/onvif-server.git
-cd onvif-server
-sudo docker buildx build --platform linux/arm64 -t onvif-server:arm64-local --load .
-cd ..
-```
-
-### 2. Clone and Setup Project
+### 1. Clone and Setup Project
 
 ```bash
 git clone <this-repository>
 cd onvif-devices
 ```
 
-### 3. Build the Combined Image
+### 2. Build the Combined Image
 
 Build the combined image that includes both ONVIF server and MediaMTX:
 
 ```bash
-docker build -f Dockerfile.combined -t onvif-camera:combined .
+docker build -t onvif-camera:combined .
 ```
 
 This creates a single image containing:
 - MediaMTX RTSP server
-- Node.js ONVIF server
+- Node.js ONVIF server (pulled from `ghcr.io/daniela-hase/onvif-server`)
 - Entrypoint script that runs both services
 
-### 4. Generate Network Configuration
+### 3. Generate Network Configuration
 
 Use the configuration generator to automatically detect your network and suggest settings:
 
@@ -186,7 +175,7 @@ Place your converted video files in the directory specified by `VIDEO_DIR` in yo
 ### 1. Start Services
 
 ```bash
-docker compose -f docker-compose.macvlan.yml up -d
+docker compose up -d
 ```
 
 ### 2. Verify Deployment
@@ -194,7 +183,7 @@ docker compose -f docker-compose.macvlan.yml up -d
 Check if containers are running:
 
 ```bash
-docker compose -f docker-compose.macvlan.yml ps
+docker compose ps
 ```
 
 Expected output:
@@ -207,7 +196,7 @@ onvif-cam2   onvif-camera:combined   "/entrypoint.sh"   onvif-cam2   Up
 View logs:
 
 ```bash
-docker compose -f docker-compose.macvlan.yml logs -f
+docker compose logs -f
 ```
 
 You should see:
@@ -264,8 +253,9 @@ onvif-devices/
 │   └── macvlan-cleanup.sh            # Optional: Host shim cleanup
 ├── .env                              # Network configuration
 ├── .env.example                      # Example configuration
-├── docker-compose.macvlan.yml        # Docker Compose file
-├── Dockerfile.combined               # Combined image (ONVIF + MediaMTX)
+├── docker-compose.yml                # Docker Compose file
+├── Dockerfile                        # Combined image (ONVIF + MediaMTX)
+├── entrypoint.sh                     # Container entrypoint script
 ├── mediamtx-cam1.yml                 # MediaMTX config for camera 1
 ├── mediamtx-cam2.yml                 # MediaMTX config for camera 2
 ├── onvif-cam1-macvlan.yaml          # ONVIF config for camera 1
@@ -327,23 +317,23 @@ If you need to access cameras from the Docker host itself:
 1. **Network pool overlap error**:
    ```bash
    docker network rm onvif-devices_cam_net
-   docker compose -f docker-compose.macvlan.yml up -d
+   docker compose up -d
    ```
 
 2. **Container name conflicts**:
    ```bash
-   docker compose -f docker-compose.macvlan.yml down
-   docker compose -f docker-compose.macvlan.yml up -d
+   docker compose down
+   docker compose up -d
    ```
 
 ### Debugging Commands
 
 ```bash
 # Check container status
-docker compose -f docker-compose.macvlan.yml ps
+docker compose ps
 
 # View logs
-docker compose -f docker-compose.macvlan.yml logs -f
+docker compose logs -f
 
 # Check specific container
 docker logs onvif-cam1
@@ -355,14 +345,14 @@ docker exec onvif-cam1 ip addr show eth0
 ffprobe rtsp://10.0.0.230:8554/cam1
 
 # Restart services
-docker compose -f docker-compose.macvlan.yml restart
+docker compose restart
 ```
 
 ## Stopping Services
 
 ```bash
 # Stop and remove containers
-docker compose -f docker-compose.macvlan.yml down
+docker compose down
 
 # If using host shim, clean it up
 ./scripts/macvlan-cleanup.sh
@@ -380,7 +370,7 @@ docker compose -f docker-compose.macvlan.yml down
 
 3. Create `mediamtx-cam3.yml` (copy from cam1/cam2)
 
-4. Add new service to `docker-compose.macvlan.yml`:
+4. Add new service to `docker-compose.yml`:
    ```yaml
    onvif-cam3:
      image: onvif-camera:combined
@@ -396,4 +386,4 @@ docker compose -f docker-compose.macvlan.yml down
        - ${VIDEO_DIR:-/home/pi/Videos}:/media:ro
    ```
 
-5. Restart: `docker compose -f docker-compose.macvlan.yml up -d`
+5. Restart: `docker compose up -d`
