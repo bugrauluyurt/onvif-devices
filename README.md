@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="ONVIF Device Simulation" width="200">
+</p>
+
 # ONVIF Device Simulation
 
 A Docker-based setup for creating virtual ONVIF cameras that can be discovered and accessed as real IP cameras on your local network. This project uses macvlan networking to give each virtual camera its own IP address and MAC address, making them appear as physical devices to ONVIF clients.
