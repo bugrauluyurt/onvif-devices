@@ -10,7 +10,7 @@ DETECTED_IF=$(ip route show default 2>/dev/null | awk '/^default/ {print $5; exi
 
 # Default values
 PARENT_IF="${DETECTED_IF:-eth0}"  # Use detected interface or fallback to eth0
-MAC_PREFIX="8C:1F:64:A2"
+MAC_PREFIX="02:11:22:A2"
 CAM_COUNT=2
 WRITE_TO_FILE=false
 QUICK_SCAN=true  # Quick scan is now the default
@@ -31,7 +31,7 @@ Generate network configuration for ONVIF devices
 
 OPTIONS:
     -i INTERFACE    Parent network interface (default: auto-detected or eth0)
-    -m MAC_PREFIX   MAC address prefix (default: 8C:1F:64:A2)
+    -m MAC_PREFIX   MAC address prefix (default: 02:11:22:A2)
     -c COUNT        Number of cameras (default: 2)
     -w              Write configuration to .env file
     -f              Full network scan (default is quick targeted scan)
