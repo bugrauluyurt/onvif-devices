@@ -19,7 +19,7 @@ The setup consists of:
 - `docker-compose.yml`: Main Docker Compose configuration
 - `Dockerfile`: Combined image build (ONVIF + MediaMTX)
 - `entrypoint.sh`: Container entrypoint script
-- `mediamtx.yml`: MediaMTX server configuration for RTSP streams
+- `mediamtx-cam1.yml` / `mediamtx-cam2.yml`: MediaMTX server configuration for each camera
 - `onvif-cam1-macvlan.yaml` / `onvif-cam2-macvlan.yaml`: Individual ONVIF device configurations
 - `scripts/generate-config.sh`: Script to automatically generate network configuration
 - `scripts/macvlan-setup.sh`: Script to create macvlan network interface
@@ -60,5 +60,5 @@ docker compose logs -f
 - Use `scripts/generate-config.sh` to automatically detect network settings and generate .env file
 - Video files should be placed in `/home/pi/Videos` directory (mounted as `/media` in containers)
 - ONVIF devices are accessible at their configured IP addresses (CAM1_IP, CAM2_IP from .env)
-- MediaMTX serves RTSP streams on port 8554 with paths `/cam1` and `/cam2`
+- MediaMTX serves RTSP streams on port 8554 with path `/cam/realmonitor`
 - arp-scan is required for network discovery (install via package manager)
