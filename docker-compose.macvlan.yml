@@ -1,15 +1,6 @@
 services:
-  mediamtx:
-    image: bluenviron/mediamtx:latest-ffmpeg-rpi
-    container_name: mediamtx
-    network_mode: host
-    restart: unless-stopped
-    volumes:
-      - ./mediamtx.yml:/mediamtx.yml:ro
-      - ${VIDEO_DIR:-/home/pi/Videos}:/media:ro
-
   onvif-cam1:
-    image: onvif-server:arm64-local
+    image: onvif-camera:combined
     container_name: onvif-cam1
     restart: unless-stopped
     networks:
@@ -18,9 +9,11 @@ services:
     mac_address: ${CAM1_MAC}
     volumes:
       - ./onvif-cam1-macvlan.yaml:/onvif.yaml:ro
+      - ./mediamtx-cam1.yml:/mediamtx.yml:ro
+      - ${VIDEO_DIR:-/home/pi/Videos}:/media:ro
 
   onvif-cam2:
-    image: onvif-server:arm64-local
+    image: onvif-camera:combined
     container_name: onvif-cam2
     restart: unless-stopped
     networks:
@@ -29,6 +22,8 @@ services:
     mac_address: ${CAM2_MAC}
     volumes:
       - ./onvif-cam2-macvlan.yaml:/onvif.yaml:ro
+      - ./mediamtx-cam2.yml:/mediamtx.yml:ro
+      - ${VIDEO_DIR:-/home/pi/Videos}:/media:ro
 
 networks:
   cam_net:

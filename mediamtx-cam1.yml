@@ -1,0 +1,11 @@
+rtsp: yes
+rtspAddress: :8554
+rtspTransports: [udp, multicast, tcp]
+hls: yes
+webrtc: yes
+
+paths:
+  cam1:
+    source: publisher
+    runOnInit: ffmpeg -stream_loop -1 -re -i /media/video.mp4 -c:v copy -c:a copy -f rtsp rtsp://127.0.0.1:8554/cam1
+    runOnInitRestart: yes

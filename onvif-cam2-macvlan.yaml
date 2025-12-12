@@ -4,7 +4,7 @@ onvif:
     uuid: 2a7c5f53-2cb6-4f7d-8a61-3d9f0e12c4b8
     ports: { server: 80, rtsp: 8554, snapshot: 8080 }
     target:
-      hostname: 10.0.0.250
-      ports: { rtsp: 8554 }
-    highQuality: { rtsp: /cam2, width: 1920, height: 1080, framerate: 25, bitrate: 4096 }
-    lowQuality:  { rtsp: /cam2, width: 640,  height: 360,  framerate: 10, bitrate: 512 }
+      hostname: 10.0.0.229
+      ports: { snapshot: 8080 }
+    highQuality: { rtsp: /cam1, width: 1920, height: 1080, framerate: 25, bitrate: 4096 }
+    lowQuality:  { rtsp: /cam1, width: 640,  height: 360,  framerate: 10, bitrate: 512 }

@@ -129,10 +129,10 @@ echo -e "${YELLOW}Scanning network for used IP addresses...${NC}"
 SCAN_NETWORK=$(echo "$SUBNET" | cut -d'/' -f1 | sed 's/\.0$//')
 
 # Determine scan ranges based on requirements
-# We need IPs in ranges: 240-250 for shim, 200-230 for cameras
+# We need IPs in range 220-235 for cameras
 if [ "$QUICK_SCAN" = true ]; then
     # Default: quick targeted scan
-    SCAN_RANGES="200-230 240-250"
+    SCAN_RANGES="220-235"
 else
     echo -e "${BLUE}Using full network scan (this may take longer)${NC}"
     SCAN_RANGES="1-254"
@@ -200,26 +200,11 @@ is_ip_used() {
     echo "$USED_IPS" | grep -q "^$1$"
 }
 
-# Suggest HOST_SHIM_IP (try high range first)
-HOST_SHIM_IP=""
-for i in {250..240}; do
-    CANDIDATE="$i1.$i2.$i3.$i"
-    if ! is_ip_used "$CANDIDATE"; then
-        HOST_SHIM_IP="$CANDIDATE/24"
-        break
-    fi
-done
-
-if [ -z "$HOST_SHIM_IP" ]; then
-    echo -e "${RED}Error: Could not find available IP for HOST_SHIM_IP${NC}"
-    exit 1
-fi
-
-# Find consecutive IPs for cameras
+# Find consecutive IPs for cameras (try 230 down to 220)
 CAM_IPS=()
 BASE_IP=230
 
-while [ ${#CAM_IPS[@]} -lt "$CAM_COUNT" ] && [ $BASE_IP -gt 200 ]; do
+while [ ${#CAM_IPS[@]} -lt "$CAM_COUNT" ] && [ $BASE_IP -ge 220 ]; do
     CANDIDATE="$i1.$i2.$i3.$BASE_IP"
     if ! is_ip_used "$CANDIDATE"; then
         CAM_IPS+=("$CANDIDATE")
@@ -228,7 +213,7 @@ while [ ${#CAM_IPS[@]} -lt "$CAM_COUNT" ] && [ $BASE_IP -gt 200 ]; do
 done
 
 if [ ${#CAM_IPS[@]} -lt "$CAM_COUNT" ]; then
-    echo -e "${RED}Error: Could not find $CAM_COUNT available consecutive IPs${NC}"
+    echo -e "${RED}Error: Could not find $CAM_COUNT available IPs in range 220-230${NC}"
     exit 1
 fi
 
@@ -249,9 +234,6 @@ PARENT_IF=$PARENT_IF
 LAN_SUBNET=$SUBNET
 LAN_GATEWAY=$GATEWAY
 
-# Host-side macvlan shim (unused IP you confirmed free)
-HOST_SHIM_IP=$HOST_SHIM_IP
-
 # Virtual ONVIF devices (unique IPs + MACs)"
 
 for i in $(seq 1 "$CAM_COUNT"); do
@@ -261,6 +243,11 @@ for i in $(seq 1 "$CAM_COUNT"); do
 CAM${i}_IP=$CAM_IP
 CAM${i}_MAC=$CAM_MAC"
 done
+
+CONFIG="$CONFIG
+
+# Host directory containing video files (mounted as /media in container)
+VIDEO_DIR=/home/pi/Videos"
 
 echo "$CONFIG"
 echo
@@ -313,5 +300,7 @@ echo
 echo -e "${GREEN}Next steps:${NC}"
 echo "1. Review the .env file and adjust if needed"
 echo "2. Update MAC addresses in onvif-cam*-macvlan.yaml files (see warning above)"
-echo "3. Run: ./scripts/macvlan-setup.sh"
-echo "4. Run: docker compose -f docker-compose.macvlan.yml up"
+echo "3. Run: docker compose -f docker-compose.macvlan.yml up -d"
+echo
+echo -e "${BLUE}Note: Host shim is no longer required. RTSP streams are served directly"
+echo -e "from each camera's macvlan IP. Other machines can access cameras directly.${NC}"

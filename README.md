@@ -5,10 +5,34 @@ A Docker-based setup for creating virtual ONVIF cameras that can be discovered a
 ## Features
 
 - Virtual ONVIF cameras with unique IP addresses and MAC addresses
-- RTSP video streaming using MediaMTX
+- RTSP video streaming served directly from each camera's IP address
 - Full ONVIF protocol support for device discovery and control
 - Configurable video quality settings (high/low quality streams)
 - Support for multiple camera instances
+- Combined container architecture (ONVIF + MediaMTX in single container)
+
+## Architecture
+
+Each virtual camera runs as a single container with both services:
+
+```
+┌─────────────────────────────────────┐
+│  onvif-cam1 (10.0.0.230)            │
+│  ├── ONVIF Server (port 80)         │
+│  └── MediaMTX RTSP (port 8554)      │
+└─────────────────────────────────────┘
+
+┌─────────────────────────────────────┐
+│  onvif-cam2 (10.0.0.229)            │
+│  ├── ONVIF Server (port 80)         │
+│  └── MediaMTX RTSP (port 8554)      │
+└─────────────────────────────────────┘
+```
+
+This means:
+- ONVIF discovery at `http://10.0.0.230` returns RTSP URL `rtsp://10.0.0.230:8554/cam1`
+- Both services share the same IP address per camera
+- No separate host shim required for external access
 
 ## Prerequisites
 
@@ -23,14 +47,15 @@ A Docker-based setup for creating virtual ONVIF cameras that can be discovered a
 
 ## Installation
 
-### 1. Build ONVIF Server (Required for ARM devices)
+### 1. Build ONVIF Server Image (Required for ARM devices)
 
-If you're running on ARM devices like Raspberry Pi, you need to build the ONVIF server image:
+If you're running on ARM devices like Raspberry Pi, you need to build the ONVIF server image first:
 
 ```bash
 git clone https://github.com/daniela-hase/onvif-server.git
 cd onvif-server
 sudo docker buildx build --platform linux/arm64 -t onvif-server:arm64-local --load .
+cd ..
 ```
 
 ### 2. Clone and Setup Project
@@ -40,7 +65,20 @@ git clone <this-repository>
 cd onvif-devices
 ```
 
-### 3. Generate Network Configuration
+### 3. Build the Combined Image
+
+Build the combined image that includes both ONVIF server and MediaMTX:
+
+```bash
+docker build -f Dockerfile.combined -t onvif-camera:combined .
+```
+
+This creates a single image containing:
+- MediaMTX RTSP server
+- Node.js ONVIF server
+- Entrypoint script that runs both services
+
+### 4. Generate Network Configuration
 
 Use the configuration generator to automatically detect your network and suggest settings:
 
@@ -49,7 +87,7 @@ Use the configuration generator to automatically detect your network and suggest
 sudo ./scripts/generate-config.sh
 
 # Or specify options
-sudo ./scripts/generate-config.sh -i wlan0 -c 3 -w
+sudo ./scripts/generate-config.sh -i eth0 -c 2 -w
 
 # See all options
 ./scripts/generate-config.sh -h
@@ -58,15 +96,15 @@ sudo ./scripts/generate-config.sh -i wlan0 -c 3 -w
 This script will:
 - Automatically detect your network subnet and gateway
 - Scan for used IP addresses using arp-scan
-- Suggest available IPs for cameras and host interface
-- Generate MAC addresses with the 8C:1F:64:A2 prefix
+- Suggest available IPs for cameras
+- Generate unique MAC addresses
 - Optionally write the configuration to `.env` file
 
 ## Configuration
 
-### Network Configuration
+### Network Configuration (.env)
 
-The configuration generator creates a `.env` file, but you can also edit it manually:
+The configuration generator creates a `.env` file. You can also edit it manually:
 
 ```bash
 # Ethernet NIC for macvlan
@@ -76,32 +114,60 @@ PARENT_IF=eth0
 LAN_SUBNET=10.0.0.0/24
 LAN_GATEWAY=10.0.0.1
 
-# Host-side macvlan shim (unused IP you confirmed free)
-HOST_SHIM_IP=10.0.0.250/24
-
 # Virtual ONVIF devices (unique IPs + MACs)
-CAM1_IP=10.0.0.231
+# Each container runs ONVIF + MediaMTX, so RTSP is served from same IP
+CAM1_IP=10.0.0.230
 CAM1_MAC=02:11:22:A2:01:01
-
-CAM2_IP=10.0.0.232
+CAM2_IP=10.0.0.229
 CAM2_MAC=02:11:22:A2:02:02
+
+# Host directory containing video files (mounted as /media in container)
+VIDEO_DIR=/home/pi/Videos
 ```
 
 **Important**: Make sure the camera IPs are static or adjust your DHCP pool from your router to prevent IP conflicts.
 
-⚠️ **Critical**: After generating or updating your `.env` file, you **MUST** update the MAC addresses in the ONVIF camera configuration files to match the generated values:
+### Camera Configuration Files
 
-- Update `mac:` field in `onvif-cam1-macvlan.yaml` with the `CAM1_MAC` value from `.env`
-- Update `mac:` field in `onvif-cam2-macvlan.yaml` with the `CAM2_MAC` value from `.env`
-- For additional cameras, update `onvif-cam{N}-macvlan.yaml` with corresponding `CAM{N}_MAC` values
+Each camera has its own YAML configuration file. After updating `.env`, ensure the MAC addresses match:
 
-**Example**: If your `.env` contains `CAM1_MAC=8C:1F:64:A2:01:01`, then `onvif-cam1-macvlan.yaml` should have:
+**onvif-cam1-macvlan.yaml:**
 ```yaml
 onvif:
-  - mac: 8C:1F:64:A2:01:01
+  - mac: 02:11:22:A2:01:01          # Must match CAM1_MAC in .env
+    name: Cam1
+    uuid: 9f3d2c1e-bbcd-4f6a-9f0b-2e5a7a4e9c61
+    ports: { server: 80, rtsp: 8554, snapshot: 8080 }
+    target:
+      hostname: 10.0.0.230          # Must match CAM1_IP in .env
+      ports: { snapshot: 8080 }
+    highQuality: { rtsp: /cam1, width: 1920, height: 1080, framerate: 25, bitrate: 4096 }
+    lowQuality:  { rtsp: /cam1, width: 640,  height: 360,  framerate: 10, bitrate: 512 }
 ```
 
-Failure to update these MAC addresses will cause network conflicts and prevent the cameras from working properly.
+**Key configuration points:**
+- `mac`: Must match the corresponding `CAM{N}_MAC` in `.env`
+- `ports.rtsp`: The port advertised in ONVIF responses (8554)
+- `target.hostname`: The camera's own IP address (for RTSP URL generation)
+- `target.ports`: Only include `snapshot` (not `rtsp`) to avoid proxy conflicts
+
+### MediaMTX Configuration
+
+Each camera has its own MediaMTX config file (`mediamtx-cam1.yml`, `mediamtx-cam2.yml`):
+
+```yaml
+rtsp: yes
+rtspAddress: :8554
+rtspTransports: [udp, multicast, tcp]
+hls: yes
+webrtc: yes
+
+paths:
+  cam1:
+    source: publisher
+    runOnInit: ffmpeg -stream_loop -1 -re -i /media/video.mp4 -c:v copy -c:a copy -f rtsp rtsp://127.0.0.1:8554/cam1
+    runOnInitRestart: yes
+```
 
 ### Video Preparation
 
@@ -110,53 +176,32 @@ Convert your video files to ONVIF-compatible format using FFmpeg:
 ```bash
 ffmpeg -i /path/to/input/video.mp4 -vf scale=1280:720,fps=15 -pix_fmt yuv420p \
   -c:v libx264 -preset slow -crf 23 -g 30 -sc_threshold 0 \
-  -c:a aac -ar 48000 -ac 1 -b:a 96k /path/to/output/video_720p_h264_aac.mp4
+  -c:a aac -ar 48000 -ac 1 -b:a 96k /path/to/output/video.mp4
 ```
-
-This command:
-- Scales video to 1280x720 (common ONVIF camera resolution)
-- Sets frame rate to 15 fps
-- Uses H.264 video codec with AAC audio
-- Optimizes for streaming compatibility
 
 Place your converted video files in the directory specified by `VIDEO_DIR` in your `.env` file (defaults to `/home/pi/Videos`).
 
-**Note**: The `VIDEO_DIR` host directory is mounted to `/media` inside the MediaMTX container. The video path in `mediamtx.yml` uses `/media/video.mp4` (the container path), not the host path. To use a different video directory:
+## Deployment
+
+### 1. Start Services
 
 ```bash
-# In .env file
-VIDEO_DIR=/path/to/your/videos
+docker compose -f docker-compose.macvlan.yml up -d
 ```
 
-## Setup and Deployment
-
-### 1. Configure Macvlan Network
-
-```bash
-./scripts/macvlan-setup.sh
-```
-
-This script creates the macvlan interface needed for containers to have unique IP addresses.
-
-**Note**: If you haven't generated the `.env` file yet, run the configuration generator first:
-```bash
-sudo ./scripts/generate-config.sh
-```
-
-⚠️ **Important**: Before starting services, ensure you have updated the MAC addresses in the ONVIF camera configuration files (`onvif-cam1-macvlan.yaml`, `onvif-cam2-macvlan.yaml`) to match the `CAM1_MAC`, `CAM2_MAC` values from your `.env` file.
-
-### 2. Start Services
-
-```bash
-docker compose -f docker-compose.macvlan.yml --env-file .env up -d
-```
-
-### 3. Verify Deployment
+### 2. Verify Deployment
 
 Check if containers are running:
 
 ```bash
 docker compose -f docker-compose.macvlan.yml ps
+```
+
+Expected output:
+```
+NAME         IMAGE                   COMMAND            SERVICE      STATUS
+onvif-cam1   onvif-camera:combined   "/entrypoint.sh"   onvif-cam1   Up
+onvif-cam2   onvif-camera:combined   "/entrypoint.sh"   onvif-cam2   Up
 ```
 
 View logs:
@@ -165,29 +210,49 @@ View logs:
 docker compose -f docker-compose.macvlan.yml logs -f
 ```
 
+You should see:
+- MediaMTX starting and opening RTSP listener on port 8554
+- ONVIF server starting on port 80
+- FFmpeg publishing video to the RTSP path
+
 ## Usage
 
 ### Accessing ONVIF Cameras
 
 Once deployed, your virtual cameras will be accessible at:
 
-- **Camera 1**: `http://10.0.0.231` (or your configured CAM1_IP)
-- **Camera 2**: `http://10.0.0.232` (or your configured CAM2_IP)
+| Camera | ONVIF Discovery | RTSP Stream |
+|--------|-----------------|-------------|
+| Cam1 | `http://10.0.0.230` | `rtsp://10.0.0.230:8554/cam1` |
+| Cam2 | `http://10.0.0.229` | `rtsp://10.0.0.229:8554/cam1` |
 
-### RTSP Streams
+### Testing RTSP Streams
 
-- **Camera 1 High Quality**: `rtsp://10.0.0.250:8554/cam1`
-- **Camera 1 Low Quality**: `rtsp://10.0.0.250:8554/cam1` (same stream, quality negotiated)
-- **Camera 2 High Quality**: `rtsp://10.0.0.250:8554/cam2`
-- **Camera 2 Low Quality**: `rtsp://10.0.0.250:8554/cam2`
+From any machine on your network:
+
+```bash
+# Test with ffprobe
+ffprobe rtsp://10.0.0.230:8554/cam1
+
+# Play with ffplay
+ffplay rtsp://10.0.0.230:8554/cam1
+
+# Play with VLC
+vlc rtsp://10.0.0.230:8554/cam1
+```
 
 ### ONVIF Discovery
 
 Use ONVIF-compatible software to discover devices:
 - ONVIF Device Manager
 - VLC Media Player
-- Security camera software
+- Security camera software (Blue Iris, Shinobi, etc.)
 - Custom ONVIF clients
+
+When you query the stream URI via ONVIF, you'll receive:
+```
+rtsp://10.0.0.230:8554/cam1
+```
 
 ## Project Structure
 
@@ -195,123 +260,102 @@ Use ONVIF-compatible software to discover devices:
 onvif-devices/
 ├── scripts/
 │   ├── generate-config.sh            # Network configuration generator
-│   ├── macvlan-setup.sh              # Network setup script
-│   └── macvlan-cleanup.sh            # Network cleanup script
+│   ├── macvlan-setup.sh              # Optional: Host shim setup (for local access)
+│   └── macvlan-cleanup.sh            # Optional: Host shim cleanup
 ├── .env                              # Network configuration
-├── docker-compose.macvlan.yml        # Main Docker Compose file
-├── mediamtx.yml                      # RTSP server configuration
-├── onvif-cam1-macvlan.yaml          # Camera 1 ONVIF config
-├── onvif-cam2-macvlan.yaml          # Camera 2 ONVIF config
-├── CLAUDE.md                         # Development guidance
+├── .env.example                      # Example configuration
+├── docker-compose.macvlan.yml        # Docker Compose file
+├── Dockerfile.combined               # Combined image (ONVIF + MediaMTX)
+├── mediamtx-cam1.yml                 # MediaMTX config for camera 1
+├── mediamtx-cam2.yml                 # MediaMTX config for camera 2
+├── onvif-cam1-macvlan.yaml          # ONVIF config for camera 1
+├── onvif-cam2-macvlan.yaml          # ONVIF config for camera 2
 └── README.md                         # This file
 ```
 
-## Configuration Files Explained
+## Host Access (Optional)
 
-- **`.env`**: Network settings including IP addresses and MAC addresses
-- **`docker-compose.macvlan.yml`**: Defines services and macvlan network configuration
-- **`mediamtx.yml`**: MediaMTX server settings for RTSP streaming
-- **`onvif-cam*-macvlan.yaml`**: Individual camera configurations with ONVIF parameters
-- **`scripts/generate-config.sh`**: Script to automatically generate network configuration
-- **`scripts/macvlan-setup.sh`**: Script to create macvlan network interface
-- **`scripts/macvlan-cleanup.sh`**: Script to remove macvlan network interface
+By default, the host machine running Docker **cannot** access the macvlan containers directly (this is a macvlan limitation). Other machines on your network can access the cameras without any issues.
+
+If you need to access cameras from the Docker host itself:
+
+1. Add `HOST_SHIM_IP` to your `.env`:
+   ```bash
+   HOST_SHIM_IP=10.0.0.250/24
+   ```
+
+2. Run the macvlan setup script:
+   ```bash
+   ./scripts/macvlan-setup.sh
+   ```
+
+3. Now you can access cameras from the host via the shim interface.
 
 ## Troubleshooting
 
 ### Network Issues
 
-1. **Containers can't reach network**:
-   - Verify macvlan interface is up: `ip addr show macvlan0`
-   - Check if parent interface exists: `ip link show eth0`
+1. **Containers can't be reached from other machines**:
+   - Verify the macvlan network was created: `docker network ls | grep cam_net`
+   - Check container IPs: `docker exec onvif-cam1 ip addr show eth0`
+   - Ensure no IP conflicts with existing devices
 
 2. **IP conflicts**:
    - Ensure camera IPs don't conflict with DHCP range
    - Use static IPs or configure DHCP reservations
 
-3. **Can't access cameras from host**:
-   - Host needs macvlan shim interface (created by scripts/macvlan-setup.sh)
-   - Verify HOST_SHIM_IP is accessible: `ping 10.0.0.250`
-
-### Docker Issues
-
-1. **Network pool overlap error** (`Pool overlaps with other one on this address space`):
-   - **Cause**: Existing macvlan network from previous Docker Compose runs using the same subnet
-   - **Solution**: Remove the conflicting network before starting:
-   ```bash
-   # Check existing networks
-   docker network ls
-
-   # Remove conflicting macvlan network (replace with actual network name)
-   docker network rm eth0_cam_net
-
-   # Clean up macvlan interface and restart
-   ./scripts/macvlan-cleanup.sh
-   ./scripts/macvlan-setup.sh
-   docker compose -f docker-compose.macvlan.yml up
-   ```
-
-2. **Container name conflicts** (`container name is already in use`):
-   - **Cause**: Leftover containers from previous runs using the same names
-   - **Solution**: Remove existing containers:
-   ```bash
-   # Stop and remove all containers
-   docker compose -f docker-compose.macvlan.yml down
-
-   # Or force remove specific containers
-   docker rm -f mediamtx onvif-cam1 onvif-cam2
-
-   # Then start fresh
-   docker compose -f docker-compose.macvlan.yml up
-   ```
-
-3. **Clean deployment procedure** (recommended when encountering Docker conflicts):
-   ```bash
-   # Complete cleanup and fresh start
-   docker compose -f docker-compose.macvlan.yml down
-   docker system prune -f
-   ./scripts/macvlan-cleanup.sh
-   ./scripts/macvlan-setup.sh
-   docker compose -f docker-compose.macvlan.yml up
-   ```
+3. **Can't access cameras from Docker host**:
+   - This is expected with macvlan - use host shim (see "Host Access" section above)
+   - Or test from another machine on the network
 
 ### Service Issues
 
 1. **ONVIF server not responding**:
-   - Check if ARM64 image was built correctly
-   - Verify container logs: `docker logs onvif-cam1`
+   - Check container logs: `docker logs onvif-cam1`
+   - Verify the combined image was built: `docker images | grep onvif-camera`
 
 2. **No video streams**:
-   - Ensure video files exist in `/home/pi/Videos/`
-   - Check MediaMTX logs: `docker logs mediamtx`
-   - Verify FFmpeg is processing files correctly
+   - Ensure video files exist in your `VIDEO_DIR`
+   - Check logs for FFmpeg errors: `docker logs onvif-cam1 | grep -i ffmpeg`
 
-### Commands for Debugging
+3. **RTSP URL shows "undefined" port**:
+   - Ensure `ports.rtsp: 8554` is set in the ONVIF YAML config
+   - Ensure `target.ports` does NOT include `rtsp` (only `snapshot`)
+
+### Docker Issues
+
+1. **Network pool overlap error**:
+   ```bash
+   docker network rm onvif-devices_cam_net
+   docker compose -f docker-compose.macvlan.yml up -d
+   ```
+
+2. **Container name conflicts**:
+   ```bash
+   docker compose -f docker-compose.macvlan.yml down
+   docker compose -f docker-compose.macvlan.yml up -d
+   ```
+
+### Debugging Commands
 
 ```bash
 # Check container status
 docker compose -f docker-compose.macvlan.yml ps
 
-# View all logs
-docker compose -f docker-compose.macvlan.yml logs
+# View logs
+docker compose -f docker-compose.macvlan.yml logs -f
 
-# Check specific service
-docker logs mediamtx
+# Check specific container
 docker logs onvif-cam1
 
-# Test network connectivity
-ping 10.0.0.231  # Camera 1
-ping 10.0.0.232  # Camera 2
-ping 10.0.0.250  # MediaMTX host
+# Verify container IP
+docker exec onvif-cam1 ip addr show eth0
 
-# Clean up macvlan interface
-./scripts/macvlan-cleanup.sh
+# Test RTSP from another machine
+ffprobe rtsp://10.0.0.230:8554/cam1
 
-# Recreate macvlan interface
-./scripts/macvlan-setup.sh
-
-# Stop and restart services
-docker compose -f docker-compose.macvlan.yml down
-docker compose -f docker-compose.macvlan.yml up
+# Restart services
+docker compose -f docker-compose.macvlan.yml restart
 ```
 
 ## Stopping Services
@@ -320,8 +364,36 @@ docker compose -f docker-compose.macvlan.yml up
 # Stop and remove containers
 docker compose -f docker-compose.macvlan.yml down
 
-# Clean up macvlan network interface (important step)
+# If using host shim, clean it up
 ./scripts/macvlan-cleanup.sh
 ```
 
-**Important**: Always run `macvlan-cleanup.sh` after stopping services to properly clean up the macvlan network interface. This prevents network conflicts when restarting services later and ensures a clean network state.
+## Adding More Cameras
+
+1. Add new camera variables to `.env`:
+   ```bash
+   CAM3_IP=10.0.0.228
+   CAM3_MAC=02:11:22:A2:03:03
+   ```
+
+2. Create `onvif-cam3-macvlan.yaml` (copy from cam1/cam2 and update values)
+
+3. Create `mediamtx-cam3.yml` (copy from cam1/cam2)
+
+4. Add new service to `docker-compose.macvlan.yml`:
+   ```yaml
+   onvif-cam3:
+     image: onvif-camera:combined
+     container_name: onvif-cam3
+     restart: unless-stopped
+     networks:
+       cam_net:
+         ipv4_address: ${CAM3_IP}
+     mac_address: ${CAM3_MAC}
+     volumes:
+       - ./onvif-cam3-macvlan.yaml:/onvif.yaml:ro
+       - ./mediamtx-cam3.yml:/mediamtx.yml:ro
+       - ${VIDEO_DIR:-/home/pi/Videos}:/media:ro
+   ```
+
+5. Restart: `docker compose -f docker-compose.macvlan.yml up -d`

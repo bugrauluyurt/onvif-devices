@@ -5,11 +5,15 @@ echo "=== Macvlan Cleanup Script ==="
 echo "This will remove macvlan network interface bindings."
 echo
 
-# Source .env if it exists
-[ -f ../.env ] && source ../.env
+# Check if macvlan0 exists
+if ! ip link show macvlan0 >/dev/null 2>&1; then
+    echo "No macvlan0 interface found - nothing to clean up."
+    echo "(This is normal if HOST_SHIM_IP was not configured)"
+    exit 0
+fi
 
 # Confirm cleanup action
-read -p "Are you sure you want to clean up all macvlan configurations? (y/N): " -n 1 -r
+read -p "Are you sure you want to clean up macvlan0? (y/N): " -n 1 -r
 echo
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     echo "Cleanup cancelled."
@@ -57,4 +61,3 @@ fi
 
 echo
 echo "=== Cleanup Complete ==="
-echo "You can now run ./macvlan-setup.sh to recreate the macvlan configuration."
