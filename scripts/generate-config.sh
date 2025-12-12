@@ -147,15 +147,15 @@ if [ "$EUID" -eq 0 ]; then
             START=$(echo $range | cut -d'-' -f1)
             END=$(echo $range | cut -d'-' -f2)
             # Use arp-scan with specific IP range and short timeout
-            RANGE_IPS=$(arp-scan --interface="$PARENT_IF" -t 100 "$i1.$i2.$i3.$START-$i1.$i2.$i3.$END" 2>/dev/null | grep -E "^[0-9]+\." | awk '{print $1}')
+            RANGE_IPS=$(arp-scan --interface="$PARENT_IF" -t 100 "$i1.$i2.$i3.$START-$i1.$i2.$i3.$END" 2>/dev/null | grep -E "^[0-9]+\." | awk '{print $1}' || true)
             if [ -n "$RANGE_IPS" ]; then
                 USED_IPS="$USED_IPS$RANGE_IPS"$'\n'
             fi
         done
-        USED_IPS=$(echo "$USED_IPS" | grep -v '^$' | sort -V | uniq)
+        USED_IPS=$(echo "$USED_IPS" | grep -v '^$' | sort -V | uniq || true)
     else
         # Full network scan with timeout
-        USED_IPS=$(arp-scan --interface="$PARENT_IF" -t 500 -l 2>/dev/null | grep -E "^[0-9]+\." | awk '{print $1}' | sort -V)
+        USED_IPS=$(arp-scan --interface="$PARENT_IF" -t 500 -l 2>/dev/null | grep -E "^[0-9]+\." | awk '{print $1}' | sort -V || true)
     fi
 else
     echo -e "${YELLOW}Note: Running without sudo, using basic ping scan (less reliable)${NC}"
