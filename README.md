@@ -318,13 +318,28 @@ If you need to access cameras from the Docker host itself:
 
 ### Docker Issues
 
-1. **Network pool overlap error**:
+1. **"invalid subinterface vlan name" error (Docker 29.x)**:
+
+   Docker 29.x has a bug that incorrectly parses interface names like `enp10s0` as VLAN subinterfaces. The workaround is to create an interface alias with a simpler name:
+
+   ```bash
+   # Create an alias for your interface
+   sudo ip link add link enp10s0 name eth0 type macvlan mode bridge
+   sudo ip link set eth0 up
+
+   # Update .env to use the alias
+   PARENT_IF=eth0
+   ```
+
+   Replace `enp10s0` with your actual interface name. To make this persistent across reboots, add the commands to `/etc/rc.local` or create a systemd service.
+
+2. **Network pool overlap error**:
    ```bash
    docker network rm onvif-devices_cam_net
    docker compose up -d
    ```
 
-2. **Container name conflicts**:
+3. **Container name conflicts**:
    ```bash
    docker compose down
    docker compose up -d
